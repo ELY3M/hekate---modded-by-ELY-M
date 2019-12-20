@@ -29,10 +29,6 @@
 #include "../soc/t210.h"
 #include "../utils/util.h"
 
-#pragma GCC push_options
-#pragma GCC target ("thumb")
-#pragma GCC optimize ("Os")
-
 #include "di.inl"
 
 static u32 _display_ver = 0;
@@ -266,26 +262,21 @@ void display_color_screen(u32 color)
 
 u32 *display_init_framebuffer()
 {
-	// Sanitize framebuffer area.
-	//memset((u32 *)FB_ADDRESS, 0, 0x3C0000);
-	// This configures the framebuffer @ FB_ADDRESS with a resolution of 1280x720 (line stride 720).
+	// This configures the framebuffer @ NYX_FB_ADDRESS with a resolution of 1280x720 (line stride 720).
 	exec_cfg((u32 *)DISPLAY_A_BASE, cfg_display_framebuffer, 32);
 
 	usleep(35000);
 
-	return (u32 *)FB_ADDRESS;
+	return (u32 *)NYX_FB_ADDRESS;
 }
 
 u32 *display_init_framebuffer2()
 {
-	// Sanitize framebuffer area.
-	memset((u32 *)FB_ADDRESS, 0, 0x3C0000);
-	// This configures the framebuffer @ FB_ADDRESS with a resolution of 1280x720 (line stride 720).
+	// This configures the framebuffer @ NYX_FB_ADDRESS with a resolution of 1280x720 (line stride 720).
 	exec_cfg((u32 *)DISPLAY_A_BASE, cfg_display_framebuffer2, 32);
 
 	usleep(35000);
 
-	return (u32 *)FB_ADDRESS;
+	return (u32 *)NYX_FB_ADDRESS;
 }
 
-#pragma GCC pop_options

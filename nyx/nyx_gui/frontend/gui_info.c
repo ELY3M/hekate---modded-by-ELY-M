@@ -45,9 +45,6 @@ extern void sd_unmount(bool deinit);
 extern int  sd_save_to_file(void *buf, u32 size, const char *filename);
 extern void emmcsn_path_impl(char *path, char *sub_dir, char *filename, sdmmc_storage_t *storage);
 
-#pragma GCC push_options
-#pragma GCC target ("thumb")
-
 static lv_res_t _create_window_dump_done(int error, char *dump_filenames)
 {
 	lv_style_t *darken;
@@ -278,13 +275,13 @@ static lv_res_t _create_window_fuses_info_status(lv_obj_t *btn)
 		s_printf(dram_man, "Samsung %s", (!dram_id) ? "4GB" : "6GB");
 		break;
 	case 1:
-		memcpy(dram_man, "Hynix 4GB", 10);
+		strcpy(dram_man, "Hynix 4GB");
 		break;
 	case 2:
-		memcpy(dram_man, "Micron 4GB", 11);
+		strcpy(dram_man, "Micron 4GB");
 		break;
 	default:
-		memcpy(dram_man, "Unknown", 8);
+		strcpy(dram_man, "Unknown");
 		break;
 	}
 
@@ -889,7 +886,9 @@ static lv_res_t _create_window_battery_status(lv_obj_t *btn)
 		s_printf(txt_buf + strlen(txt_buf), "-%d mA\n", (~value + 1) / 1000);
 
 	max17050_get_property(MAX17050_VCELL, &value);
-	s_printf(txt_buf + strlen(txt_buf), "%d mV\n", value);
+	bool voltage_empty = value < 3200;
+	s_printf(txt_buf + strlen(txt_buf), "%s%d mV%s\n",
+		voltage_empty ? "FFF8000" : "", value,  voltage_empty ? " (Empty!)#" : "");
 
 	max17050_get_property(MAX17050_OCVInternal, &value);
 	s_printf(txt_buf + strlen(txt_buf), "%d mV\n", value);
@@ -1067,7 +1066,7 @@ void create_tab_info(lv_theme_t *th, lv_obj_t *parent)
 
 	static lv_style_t line_style;
 	lv_style_copy(&line_style, th->line.decor);
-	line_style.line.color = LV_COLOR_HEX3(0x444);
+	line_style.line.color = LV_COLOR_HEX(0x444444);
 
 	line_sep = lv_line_create(h1, line_sep);
 	lv_obj_align(line_sep, label_txt2, LV_ALIGN_OUT_BOTTOM_LEFT, -(LV_DPI / 4), LV_DPI / 16);
@@ -1171,5 +1170,3 @@ void create_tab_info(lv_theme_t *th, lv_obj_t *parent)
 	lv_obj_set_style(label_txt6, &hint_small_style);
 	lv_obj_align(label_txt6, btn7, LV_ALIGN_OUT_BOTTOM_LEFT, 0, LV_DPI / 3);
 }
-
-#pragma GCC pop_options

@@ -29,6 +29,7 @@ typedef struct _hekate_config
 	u32 backlight;
 	u32 autohosoff;
 	u32 autonogc;
+	u32 updater2p;
 	char *brand;
 	char *tagline;
 	// Global temporary config.
@@ -39,11 +40,6 @@ typedef struct _hekate_config
 	u32  sbar_time_keeping;
 	u32  errors;
 } hekate_config;
-
-typedef enum
-{
-	ERR_LIBSYS_LP0 = (1 << 0),
-} hsysmodule_t;
 
 void set_default_configuration();
 int create_config_entry();

@@ -19,6 +19,8 @@
 #include <string.h>
 #include <stdlib.h>
 
+#include "../../common/memory_map.h"
+
 #include "config/config.h"
 #include "gfx/di.h"
 #include "gfx/gfx.h"
@@ -61,8 +63,8 @@ u8 *Kc_MENU_LOGO;
 hekate_config h_cfg;
 
 const volatile ipl_ver_meta_t __attribute__((section ("._ipl_version"))) ipl_ver = {
-	.magic = BL_MAGIC,
-	.version = (BL_VER_MJ + '0') | ((BL_VER_MN + '0') << 8) | ((BL_VER_HF + '0') << 16),
+	.magic = NYX_MAGIC,
+	.version = (NYX_VER_MJ + '0') | ((NYX_VER_MN + '0') << 8) | ((NYX_VER_HF + '0') << 16),
 	.rsvd0 = 0,
 	.rsvd1 = 0
 };
@@ -168,9 +170,6 @@ int sd_save_to_file(void *buf, u32 size, const char *filename)
 
 	return 0;
 }
-
-#pragma GCC push_options
-#pragma GCC target ("thumb")
 
 void emmcsn_path_impl(char *path, char *sub_dir, char *filename, sdmmc_storage_t *storage)
 {
@@ -342,6 +341,8 @@ void load_saved_configuration()
 							h_cfg.autohosoff = atoi(kv->val);
 						else if (!strcmp("autonogc", kv->key))
 							h_cfg.autonogc = atoi(kv->val);
+						else if (!strcmp("updater2p", kv->key))
+							h_cfg.updater2p = atoi(kv->val);
 						else if (!strcmp("brand", kv->key))
 						{
 							h_cfg.brand = malloc(strlen(kv->val) + 1);
@@ -364,18 +365,18 @@ void load_saved_configuration()
 void nyx_init_load_res()
 {
 	bpmp_mmu_enable();
-	bpmp_clk_rate_set(BPMP_CLK_SUPER_BOOST);
+	bpmp_clk_rate_set(BPMP_CLK_DEFAULT_BOOST);
 
 	// Set bootloader's default configuration.
 	set_default_configuration();
 
-	gfx_init_ctxt((u32 *)FB_ADDRESS, 720, 1280, 720);
+	gfx_init_ctxt((u32 *)NYX_FB_ADDRESS, 720, 1280, 720);
 	gfx_con_init();
 
 	sd_mount();
 
+	// Train DRAM and switch to max frequency.
 	minerva_init();
-	minerva_change_freq(FREQ_1600);
 
 	load_saved_configuration();
 
@@ -394,10 +395,6 @@ void nyx_init_load_res()
 	h_cfg.rcm_patched = fuse_check_patched_rcm();
 }
 
-#define IPL_STACK_TOP  0x90010000
-#define IPL_HEAP_START 0x90020000
-#define IPL_HEAP_END   0xB5000000
-
 extern void pivot_stack(u32 stack_top);
 
 #if (LV_LOG_PRINTF == 1)
@@ -411,7 +408,12 @@ void ipl_main()
 	//Tegra/Horizon configuration goes to 0x80000000+, package2 goes to 0xA9800000, we place our heap in between.
 	heap_init(IPL_HEAP_START);
 
+	
+
 	b_cfg = (boot_cfg_t *)(nyx_str->hekate + 0x94);
+
+	// Important: Preserve version header!
+	__asm__ ("" : : "" (ipl_ver));
 
 #if (LV_LOG_PRINTF == 1)
 	gpio_config(GPIO_PORT_G, GPIO_PIN_0, GPIO_MODE_SPIO);
@@ -433,5 +435,3 @@ void ipl_main()
 	while (true)
 		bpmp_halt();
 }
-
-#pragma GCC pop_options

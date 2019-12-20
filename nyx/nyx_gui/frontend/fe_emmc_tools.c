@@ -24,19 +24,17 @@
 #include "gui.h"
 #include "fe_emmc_tools.h"
 #include "fe_emummc_tools.h"
+#include "../../../common/memory_map.h"
 #include "../config/config.h"
 #include "../libs/fatfs/ff.h"
 #include "../mem/heap.h"
 #include "../sec/se.h"
+#include "../sec/se_t210.h"
 #include "../storage/nx_emmc.h"
 #include "../storage/sdmmc.h"
 #include "../utils/btn.h"
 #include "../utils/sprintf.h"
 #include "../utils/util.h"
-
-#define EMMC_BUF_ALIGNED 0xB5000000
-#define SDXC_BUF_ALIGNED 0xB6000000
-#define MIXD_BUF_ALIGNED 0xB7000000
 
 #define NUM_SECTORS_PER_ITER 8192 // 4MB Cache.
 #define OUT_FILENAME_SZ 128
@@ -51,9 +49,6 @@ extern hekate_config h_cfg;
 extern bool sd_mount();
 extern void sd_unmount(bool deinit);
 extern void emmcsn_path_impl(char *path, char *sub_dir, char *filename, sdmmc_storage_t *storage);
-
-#pragma GCC push_options
-#pragma GCC target ("thumb")
 
 static void get_valid_partition(u32 *sector_start, u32 *sector_size, u32 *part_idx, bool backup)
 {
@@ -143,8 +138,6 @@ static void _update_filename(char *outFilename, u32 sdPathLen, u32 currPartIdx)
 		itoa(currPartIdx, &outFilename[sdPathLen], 10);
 }
 
-#pragma GCC pop_options
-
 static int _dump_emmc_verify(emmc_tool_gui_t *gui, sdmmc_storage_t *storage, u32 lba_curr, char *outFilename, emmc_part_t *part)
 {
 	FIL fp;
@@ -232,6 +225,9 @@ static int _dump_emmc_verify(emmc_tool_gui_t *gui, sdmmc_storage_t *storage, u32
 
 					return 1;
 				}
+
+				se_calc_sha256(hashEm, NULL, bufEm, num << 9, 0, SHA_INIT_HASH, false);
+
 				f_lseek(&fp, (u64)sdFileSector << (u64)9);
 				if (f_read_fast(&fp, bufSd, num << 9))
 				{
@@ -250,8 +246,8 @@ static int _dump_emmc_verify(emmc_tool_gui_t *gui, sdmmc_storage_t *storage, u32
 					return 1;
 				}
 
-				se_calc_sha256(hashEm, bufEm, num << 9);
-				se_calc_sha256(hashSd, bufSd, num << 9);
+				se_calc_sha256_finalize(hashEm, NULL);
+				se_calc_sha256(hashSd, NULL, bufSd, num << 9, 0, SHA_INIT_HASH, true);
 				res = memcmp(hashEm, hashSd, 0x10);
 
 				if (res)
@@ -363,7 +359,7 @@ static int _dump_emmc_part(emmc_tool_gui_t *gui, char *sd_path, sdmmc_storage_t 
 
 	FIL partialIdxFp;
 	char partialIdxFilename[12];
-	memcpy(partialIdxFilename, "partial.idx", 12);
+	strcpy(partialIdxFilename, "partial.idx");
 
 	s_printf(gui->txt_buf, "#96FF00 SD Card free space:# %d MiB\n#96FF00 Total backup size:# %d MiB\n\n",
 		sd_fs.free_clst * sd_fs.csize >> SECTORS_TO_MIB_COEFF,
@@ -769,7 +765,7 @@ void dump_emmc_selected(emmcPartType_t dumpType, emmc_tool_gui_t *gui)
 		bootPart.lba_end = (BOOT_PART_SIZE / NX_EMMC_BLOCKSIZE) - 1;
 		for (i = 0; i < 2; i++)
 		{
-			memcpy(bootPart.name, "BOOT", 5);
+			strcpy(bootPart.name, "BOOT");
 			bootPart.name[4] = (u8)('0' + i);
 			bootPart.name[5] = 0;
 
@@ -1349,7 +1345,7 @@ void restore_emmc_selected(emmcPartType_t restoreType, emmc_tool_gui_t *gui)
 		bootPart.lba_end = (BOOT_PART_SIZE / NX_EMMC_BLOCKSIZE) - 1;
 		for (i = 0; i < 2; i++)
 		{
-			memcpy(bootPart.name, "BOOT", 4);
+			strcpy(bootPart.name, "BOOT");
 			bootPart.name[4] = (u8)('0' + i);
 			bootPart.name[5] = 0;
 

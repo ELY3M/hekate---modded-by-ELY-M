@@ -212,7 +212,7 @@ int tsec_query(u8 *tsec_keys, u8 kb, tsec_ctxt_t *tsec_ctxt)
 			res = -6;
 			smmu_deinit_for_tsec();
 
-			goto out;
+			goto out_free;
 		}
 
 		// Give some extra time to make sure PKG1.1 is decrypted.
@@ -282,7 +282,7 @@ out:;
 	clock_disable_sor_safe();
 	clock_disable_tsec();
 	bpmp_mmu_enable();
-	bpmp_clk_rate_set(BPMP_CLK_SUPER_BOOST);
+	bpmp_clk_rate_set(BPMP_CLK_DEFAULT_BOOST);
 
 	return res;
 }

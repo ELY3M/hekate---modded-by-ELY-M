@@ -8,11 +8,11 @@
 /*-----------------------------------------------------------------------*/
 
 #include <string.h>
+
+#include "../../../common/memory_map.h"
+
 #include "diskio.h"		/* FatFs lower layer API */
 #include "../../storage/sdmmc.h"
-
-#define SDMMC_UPPER_BUFFER 0xB8000000
-#define DRAM_START         0x80000000
 
 extern sdmmc_storage_t sd_storage;
 
@@ -46,7 +46,8 @@ DRESULT disk_read (
 	UINT count		/* Number of sectors to read */
 )
 {
-	if ((u32)buff >= DRAM_START)
+	// Ensure that buffer resides in DRAM and it's DMA aligned.
+	if (((u32)buff >= DRAM_START) && !((u32)buff % 8))
 		return sdmmc_storage_read(&sd_storage, sector, count, buff) ? RES_OK : RES_ERROR;
 	u8 *buf = (u8 *)SDMMC_UPPER_BUFFER;
 	if (sdmmc_storage_read(&sd_storage, sector, count, buf))
@@ -67,9 +68,10 @@ DRESULT disk_write (
 	UINT count			/* Number of sectors to write */
 )
 {
-	if ((u32)buff >= DRAM_START)
+	// Ensure that buffer resides in DRAM and it's DMA aligned.
+	if (((u32)buff >= DRAM_START) && !((u32)buff % 8))
 		return sdmmc_storage_write(&sd_storage, sector, count, (void *)buff) ? RES_OK : RES_ERROR;
-	u8 *buf = (u8 *)SDMMC_UPPER_BUFFER; //TODO: define this somewhere.
+	u8 *buf = (u8 *)SDMMC_UPPER_BUFFER;
 	memcpy(buf, buff, 512 * count);
 	if (sdmmc_storage_write(&sd_storage, sector, count, buf))
 		return RES_OK;

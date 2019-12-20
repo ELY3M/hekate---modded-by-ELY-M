@@ -32,13 +32,8 @@
 #include "../utils/sprintf.h"
 #include "../utils/util.h"
 
-#define EMMC_BUF_ALIGNED 0xB5000000
-#define SDXC_BUF_ALIGNED 0xB6000000
-#define MIXD_BUF_ALIGNED 0xB7000000
-
 #define NUM_SECTORS_PER_ITER 8192 // 4MB Cache.
 #define OUT_FILENAME_SZ 128
-#define SHA256_SZ 0x20
 
 #define MBR_1ST_PART_TYPE_OFF 0x1C2
 
@@ -49,9 +44,6 @@ extern hekate_config h_cfg;
 
 extern bool sd_mount();
 extern void sd_unmount(bool deinit);
-
-#pragma GCC push_options
-#pragma GCC target ("thumb")
 
 void save_emummc_cfg(u32 part_idx, u32 sector_start, const char *path)
 {
@@ -100,8 +92,6 @@ void save_emummc_cfg(u32 part_idx, u32 sector_start, const char *path)
 
 	f_close(&fp);
 }
-
-#pragma GCC pop_options
 
 static void _update_emummc_base_folder(char *outFilename, u32 sdPathLen, u32 currPartIdx)
 {
@@ -368,7 +358,7 @@ void dump_emummc_file(emmc_tool_gui_t *gui)
 	bootPart.lba_end = (BOOT_PART_SIZE / NX_EMMC_BLOCKSIZE) - 1;
 	for (i = 0; i < 2; i++)
 	{
-		memcpy(bootPart.name, "BOOT", 5);
+		strcpy(bootPart.name, "BOOT");
 		bootPart.name[4] = (u8)('0' + i);
 		bootPart.name[5] = 0;
 
@@ -623,7 +613,7 @@ void dump_emummc_raw(emmc_tool_gui_t *gui, int part_idx, u32 sector_start)
 	bootPart.lba_end = (BOOT_PART_SIZE / NX_EMMC_BLOCKSIZE) - 1;
 	for (i = 0; i < 2; i++)
 	{
-		memcpy(bootPart.name, "BOOT", 5);
+		strcpy(bootPart.name, "BOOT");
 		bootPart.name[4] = (u8)('0' + i);
 		bootPart.name[5] = 0;
 

@@ -41,9 +41,6 @@ extern void sd_unmount(bool deinit);
 extern int  sd_save_to_file(void *buf, u32 size, const char *filename);
 extern void emmcsn_path_impl(char *path, char *sub_dir, char *filename, sdmmc_storage_t *storage);
 
-#pragma GCC push_options
-#pragma GCC target ("thumb")
-
 bool get_autorcm_status(bool change)
 {
 	u8 corr_mod_byte0;
@@ -277,9 +274,9 @@ static lv_res_t _create_window_unset_abit_tool(lv_obj_t *btn)
 		u32 total = 0;
 
 		if (!nintendo_folder)
-			memcpy(path, "", 1);
+			path[0] = 0;
 		else
-			memcpy(path, "Nintendo", 9);
+			strcpy(path, "Nintendo");
 
 		u32 ufidx = 0;
 
@@ -288,7 +285,7 @@ static lv_res_t _create_window_unset_abit_tool(lv_obj_t *btn)
 		// Also fix the emuMMC Nintendo folders.
 		if (nintendo_folder)
 		{
-			memcpy(path, "emuMMC", 7);
+			strcpy(path, "emuMMC");
 			_fix_attributes(&ufidx, lb_val, path, &total, nintendo_folder, nintendo_folder);
 		}
 
@@ -824,7 +821,7 @@ static void _create_tab_tools_arc_autorcm(lv_theme_t *th, lv_obj_t *parent)
 	label_btn = lv_label_create(btn3, NULL);
 	lv_btn_set_fit(btn3, true, true);
 	lv_label_set_recolor(label_btn, true);
-	lv_label_set_static_text(label_btn, SYMBOL_REFRESH"  AutoRCM #00ffc9   ON #");
+	lv_label_set_static_text(label_btn, SYMBOL_REFRESH"  AutoRCM #00FFC9   ON #");
 	lv_obj_align(btn3, line_sep, LV_ALIGN_OUT_BOTTOM_LEFT, LV_DPI / 4, LV_DPI / 4);
 	lv_btn_set_action(btn3, LV_BTN_ACTION_CLICK, _create_mbox_autorcm_status);
 
@@ -894,5 +891,3 @@ void create_tab_tools(lv_theme_t *th, lv_obj_t *parent)
 
 	lv_tabview_set_tab_act(tv, 0, false);
 }
-
-#pragma GCC pop_options

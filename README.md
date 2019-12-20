@@ -14,7 +14,7 @@ Custom Nintendo Switch bootloader, firmware patcher, and more.
 |  \|__ bootlogo.bmp       | It is used when custom is on and no logopath found. Can be skipped.   |
 |  \|__ hekate_ipl.ini     | Main bootloader configuration and boot entries.                       |
 |  \|__ patches.ini        | Add external patches. Can be skipped. A template can be found [here](./res/patches_template.ini) |
-|  \|__ update.bin         | If newer, it is loaded at boot. For modchips. Can be skipped.         |
+|  \|__ update.bin         | If newer, it is loaded at boot. For modchips. Auto updated. Can be skipped. |
 | bootloader/ini/          | For individual inis. 'More configs...' menu. Autoboot is supported.   |
 | bootloader/res/          | Nyx user resources. Icons and more.                                   |
 |  \|__ background.bmp     | Nyx - custom background.                                              |
@@ -55,6 +55,7 @@ You can find a template [Here](./res/hekate_ipl_template.ini)
 | verification=2     | 0: Disable Backup/Restore verification, 1: Sparse (block based, fast and not 100% reliable), 2: Full (sha256 based, slow and 100% reliable). |
 | autohosoff=1       | 0: Disable, 1: If woke up from HOS via an RTC alarm, shows logo, then powers off completely, 2: No logo, immediately powers off.|
 | autonogc=1         | 0: Disable, 1: Automatically applies nogc patch if unburnt fuses found and a >= 4.0.0 HOS is booted. |
+| updater2p=0        | 0: Disable, 1: Force updates (if needed) the reboot2payload binary to be hekate. |
 | backlight=100      | Screen backlight level. 0-255.                             |
 
 
@@ -73,6 +74,7 @@ You can find a template [Here](./res/hekate_ipl_template.ini)
 | debugmode=1            | Enables Debug mode. Obsolete when used with exosphere as secmon. |
 | atmosphere=1           | Enables Atmosphère patching.                               |
 | nouserexceptions=1     | Disables usermode exception handlers when paired with Exosphère. |
+| userpmu=1              | Allows user access to PMU when paired with Exosphère.      |
 | emummc_force_disable=1 | Disabled emuMMC if it's enabled.                           |
 | stock=1                | Disables unneeded kernel patching when running stock or semi-stock. `If emuMMC is enabled, emummc_force_disabled=1` is required to run completely stock. |
 | id=idname              | Identifies boot entry for forced boot via id. Max 7 chars. |
@@ -116,7 +118,8 @@ Greetings to: fincs, hexkyz, SciresM, Shiny Quagsire, WinterMute.
 Open source and free packages used:
  - FatFs R0.13a, Copyright (C) 2017, ChaN
  - bcl-1.2.0, Copyright (C) 2003-2006, Marcus Geelnard
- - Atmosphère (SE sha256, prc id kernel patches), Copyright (C) 2018, Atmosphère-NX
+ - Atmosphère (Exosphere types/panic, prc id kernel patches),
+   Copyright (C) 2018-2019, Atmosphère-NX
  - elfload, Copyright (C) 2014 Owen Shepherd, Copyright (C) 2018 M4xw
 
                          ___

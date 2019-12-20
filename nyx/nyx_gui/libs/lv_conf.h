@@ -18,6 +18,7 @@
 #define LV_CONF_H
 
 #include "../utils/types.h"
+#include "../../../common/memory_map.h"
 /*===================
    Dynamic memory
  *===================*/
@@ -26,9 +27,9 @@
  * to store the graphical objects and other data */
 #define LV_MEM_CUSTOM         0              /*1: use custom malloc/free, 0: use the built-in lv_mem_alloc/lv_mem_free*/
 #if LV_MEM_CUSTOM == 0
-#  define LV_MEM_SIZE         (0x38000U * 1024U) /*Size memory used by `lv_mem_alloc` in bytes (>= 2kB)*/
+#  define LV_MEM_SIZE         NYX_LV_MEM_SZ  /*Size memory used by `lv_mem_alloc` in bytes (>= 2kB)*/
 #  define LV_MEM_ATTR                        /*Complier prefix for big array declaration*/
-#  define LV_MEM_ADR          0xF1000000     /*Set an address for memory pool instead of allocation it as an array. Can be in external SRAM too.*/
+#  define LV_MEM_ADR          NYX_LV_MEM_ADR /*Set an address for memory pool instead of allocation it as an array. Can be in external SRAM too.*/
 #  define LV_MEM_AUTO_DEFRAG  1              /*Automatically defrag on free*/
 #else       /*LV_MEM_CUSTOM*/
 #  define LV_MEM_CUSTOM_INCLUDE "../../../mem/heap.h"   /*Header for the dynamic memory function*/
@@ -86,7 +87,7 @@
  /* Place VDB to a specific address (e.g. in external RAM)
   * 0: allocate automatically into RAM
   * LV_VDB_ADR_INV: to replace it later with `lv_vdb_set_adr()`*/
-#define LV_VDB_ADR          0xF0000000
+#define LV_VDB_ADR          NYX_LV_VDB_ADR
 
 /* Use two Virtual Display buffers (VDB) to parallelize rendering and flushing
  * The flushing should use DMA to write the frame buffer in the background */
@@ -144,7 +145,6 @@
 #define LV_ATTRIBUTE_TICK_INC                   /* Define a custom attribute to `lv_tick_inc` function */
 #define LV_ATTRIBUTE_TASK_HANDLER               /* Define a custom attribute to `lv_task_handler` function */
 #define LV_COMPILER_VLA_SUPPORTED            1  /* 1: Variable length array is supported*/
-#define LV_COMPILER_NON_CONST_INIT_SUPPORTED 1  /* 1: Initialization with non constant values are supported */
 
 /*HAL settings*/
 #define LV_TICK_CUSTOM               1                       /*1: use a custom tick source (removing the need to manually update the tick with `lv_tick_inc`) */
@@ -231,7 +231,7 @@
 #define USE_LV_IMG      1
 #if USE_LV_IMG != 0
 #  define LV_IMG_CF_INDEXED   0       /*Enable indexed (palette) images*/
-#  define LV_IMG_CF_ALPHA     1       /*Enable alpha indexed images*/
+#  define LV_IMG_CF_ALPHA     0       /*Enable alpha indexed images*/
 #endif
 
 /*Line (dependencies: -*/

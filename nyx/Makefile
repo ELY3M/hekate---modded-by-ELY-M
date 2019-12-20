@@ -6,15 +6,9 @@ include $(DEVKITARM)/base_rules
 
 ################################################################################
 
-NYX_LOAD_ADDR := 0x40003000
-NYX_RES_ADDR := 0xEE000000
-NYX_STORAGE_ADDR := 0xED000000
+NYX_LOAD_ADDR := 0x81000000
 NYX_MAGIC := 0x43544347 #"GCTC"
-BLVERSION_MAJOR := 0
-BLVERSION_MINOR := 8
-BLVERSION_HOTFX := 2
-
-BL_RESERVED := 0
+include ./../Versions.inc
 
 ################################################################################
 
@@ -39,7 +33,7 @@ OBJS += $(addprefix $(BUILDDIR)/$(TARGET)/, \
 	bpmp.o clock.o cluster.o di.o gpio.o i2c.o mc.o sdram.o pinmux.o se.o smmu.o tsec.o uart.o \
 	fuse.o kfuse.o minerva.o \
 	sdmmc.o sdmmc_driver.o \
-	bq24193.o max17050.o max7762x.o max77620-rtc.o \
+	bq24193.o max17050.o max7762x.o max77620-rtc.o regulator_5v.o \
 	touch.o tmp451.o fan.o \
 	hw_init.o \
 )
@@ -74,9 +68,8 @@ OBJS += $(addprefix $(BUILDDIR)/$(TARGET)/, \
 
 ################################################################################
 
-CUSTOMDEFINES := -DNYX_RES_ADDR=$(NYX_RES_ADDR) -DNYX_STORAGE_ADDR=$(NYX_STORAGE_ADDR)
-CUSTOMDEFINES += -DNYX_LOAD_ADDR=$(NYX_LOAD_ADDR) -DBL_MAGIC=$(NYX_MAGIC)
-CUSTOMDEFINES += -DBL_VER_MJ=$(BLVERSION_MAJOR) -DBL_VER_MN=$(BLVERSION_MINOR) -DBL_VER_HF=$(BLVERSION_HOTFX) -DBL_RESERVED=$(BL_RESERVED)
+CUSTOMDEFINES += -DNYX_LOAD_ADDR=$(NYX_LOAD_ADDR) -DNYX_MAGIC=$(NYX_MAGIC)
+CUSTOMDEFINES += -DNYX_VER_MJ=$(NYXVERSION_MAJOR) -DNYX_VER_MN=$(NYXVERSION_MINOR) -DNYX_VER_HF=$(NYXVERSION_HOTFX) -DNYX_RESERVED=$(NYXVERSION_RSVD)
 
 # 0: UART_A, 1: UART_B.
 #CUSTOMDEFINES += -DDEBUG_UART_PORT=1
@@ -84,7 +77,7 @@ CUSTOMDEFINES += -DBL_VER_MJ=$(BLVERSION_MAJOR) -DBL_VER_MN=$(BLVERSION_MINOR) -
 #CUSTOMDEFINES += -DDEBUG
 
 ARCH := -march=armv4t -mtune=arm7tdmi -mthumb-interwork
-CFLAGS = $(ARCH) -O2 -nostdlib -ffunction-sections -fdata-sections -flto -fomit-frame-pointer -fno-inline -fno-strict-aliasing -std=gnu11 -Wall $(CUSTOMDEFINES)
+CFLAGS = $(ARCH) -O2 -nostdlib -ffunction-sections -fdata-sections -fomit-frame-pointer -std=gnu11 -Wall $(CUSTOMDEFINES)
 CFLAGS += -g
 LDFLAGS = $(ARCH) -nostartfiles -lgcc -Wl,--nmagic,--gc-sections -Xlinker --defsym=NYX_LOAD_ADDR=$(NYX_LOAD_ADDR)
 

@@ -19,6 +19,8 @@
 #include <string.h>
 #include <stdlib.h>
 
+#include "../common/memory_map.h"
+
 #include "config/config.h"
 #include "gfx/di.h"
 #include "gfx/gfx.h"
@@ -250,19 +252,39 @@ void reloc_patcher(u32 payload_dst, u32 payload_src, u32 payload_size)
 	}
 }
 
-bool is_ipl_updated(void *buf)
+bool is_ipl_updated(void *buf, char *path, bool force)
 {
 	ipl_ver_meta_t *update_ft = (ipl_ver_meta_t *)(buf + PATCHED_RELOC_SZ + sizeof(boot_cfg_t));
 
-	if (update_ft->magic == ipl_ver.magic)
-	{
-		if (byte_swap_32(update_ft->version) <= byte_swap_32(ipl_ver.version))
-			return true;
-		return false;
+	// Check if newer version.
+	if (!force && (update_ft->magic == ipl_ver.magic))
+		if (byte_swap_32(update_ft->version) > byte_swap_32(ipl_ver.version))
+			return false;
 
+	// Update if old or broken.
+	if ((force && (update_ft->magic != ipl_ver.magic)) ||
+		(byte_swap_32(update_ft->version) < byte_swap_32(ipl_ver.version)))
+	{
+		FIL fp;
+		volatile reloc_meta_t *reloc = (reloc_meta_t *)(IPL_LOAD_ADDR + RELOC_META_OFF);
+		boot_cfg_t *tmp_cfg = malloc(sizeof(boot_cfg_t));
+		memset(tmp_cfg, 0, sizeof(boot_cfg_t));
+
+		f_open(&fp, path, FA_WRITE | FA_CREATE_ALWAYS);
+		f_write(&fp, (u8 *)reloc->start, reloc->end - reloc->start, NULL);
+		
+		// Write needed tag in case injected ipl uses old versioning.
+		f_write(&fp, "ICTC49", 6, NULL);
+
+		// Reset boot storage configuration.
+		f_lseek(&fp, PATCHED_RELOC_SZ);
+		f_write(&fp, tmp_cfg, sizeof(boot_cfg_t), NULL);
+
+		f_close(&fp);
+		free(tmp_cfg);
 	}
-	else
-		return true;
+
+	return true;
 }
 
 int launch_payload(char *path, bool update)
@@ -270,8 +292,6 @@ int launch_payload(char *path, bool update)
 	if (!update)
 		gfx_clear_grey(0x1B);
 	gfx_con_setpos(0, 0);
-	if (!path)
-		return 1;
 
 	if (sd_mount())
 	{
@@ -279,9 +299,8 @@ int launch_payload(char *path, bool update)
 		if (f_open(&fp, path, FA_READ))
 		{
 			EPRINTFARGS("Payload file is missing!\n(%s)", path);
-			sd_unmount();
 
-			return 1;
+			goto out;
 		}
 
 		// Read and copy the payload to our chosen address
@@ -296,15 +315,14 @@ int launch_payload(char *path, bool update)
 		if (f_read(&fp, buf, size, NULL))
 		{
 			f_close(&fp);
-			sd_unmount();
-
-			return 1;
+			
+			goto out;
 		}
 
 		f_close(&fp);
 
-		if (update && is_ipl_updated(buf))
-			return 1;
+		if (update && is_ipl_updated(buf, path, false))
+			goto out;
 
 		sd_unmount();
 
@@ -338,6 +356,10 @@ int launch_payload(char *path, bool update)
 			(*update_ptr)();
 		}
 	}
+
+out:
+	if (!update)
+		sd_unmount();
 
 	return 1;
 }
@@ -393,7 +415,7 @@ void launch_tools()
 				i++;
 			}
 		}
-					
+
 		if (i > 0)
 		{
 			memset(&ments[i + 2], 0, sizeof(ment_t));
@@ -407,6 +429,7 @@ void launch_tools()
 				free(dir);
 				free(filelist);
 				sd_unmount();
+
 				return;
 			}
 		}
@@ -427,11 +450,8 @@ void launch_tools()
 		memcpy(dir + strlen(dir), "/", 2);
 		memcpy(dir + strlen(dir), file_sec, strlen(file_sec) + 1);
 
-		if (launch_payload(dir, false))
-		{
-			EPRINTF("Failed to launch payload.");
-			free(dir);
-		}
+		launch_payload(dir, false);
+		EPRINTF("Failed to launch payload.");
 	}
 
 out:
@@ -531,11 +551,9 @@ void ini_list_launcher()
 
 	if (payload_path)
 	{
-		if (launch_payload(payload_path, false))
-		{
-			EPRINTF("Failed to launch payload.");
-			free(payload_path);
-		}
+		launch_payload(payload_path, false);
+		EPRINTF("Failed to launch payload.");
+		free(payload_path);
 	}
 	else if (!hos_launch(cfg_sec))
 	{
@@ -665,11 +683,9 @@ void launch_firmware()
 
 	if (payload_path)
 	{
-		if (launch_payload(payload_path, false))
-		{
-			EPRINTF("Failed to launch payload.");
-			free(payload_path);
-		}
+		launch_payload(payload_path, false);
+		EPRINTF("Failed to launch payload.");
+		free(payload_path);
 	}
 	else if (!hos_launch(cfg_sec))
 		EPRINTF("Failed to launch firmware.");
@@ -682,6 +698,8 @@ out:
 	btn_wait();
 }
 
+#define NYX_VER_OFF 0x9C
+
 void nyx_load_run()
 {
 	sd_mount();
@@ -692,6 +710,9 @@ void nyx_load_run()
 
 	sd_unmount();
 
+	u32 expected_nyx_ver = ((NYX_VER_MJ + '0') << 24) | ((NYX_VER_MN + '0') << 16) | ((NYX_VER_HF + '0') << 8);
+	u32 nyx_ver = byte_swap_32(*(u32 *)(nyx + NYX_VER_OFF));
+
 	gfx_clear_grey(0x1B);
 	u8 *BOOTLOGO = (void *)malloc(0x4000);
 	blz_uncompress_srcdest(BOOTLOGO_BLZ, SZ_BOOTLOGO_BLZ, BOOTLOGO, SZ_BOOTLOGO);
@@ -699,16 +720,29 @@ void nyx_load_run()
 	free(BOOTLOGO);
 	display_backlight_brightness(h_cfg.backlight, 1000);
 
+	// Check if Nyx version is old.
+	if (nyx_ver < expected_nyx_ver)
+	{
+		h_cfg.errors |= ERR_SYSOLD_NYX;
+
+		gfx_con_setpos(0, 0);
+		WPRINTF("Old Nyx GUI found! There will be dragons!\n");
+		WPRINTF("\nUpdate your bootloader folder!\n\n");
+		WPRINTF("Press any key...");
+
+		msleep(2000);
+		btn_wait();
+	}
+
+	nyx_str->info.errors = h_cfg.errors;
 	nyx_str->cfg = 0;
 	if (b_cfg.extra_cfg & EXTRA_CFG_NYX_DUMP)
 	{
 		b_cfg.extra_cfg &= ~(EXTRA_CFG_NYX_DUMP);
 		nyx_str->cfg |= NYX_CFG_DUMP;
 	}
-	if (nyx_str->mtc_cfg.mtc_table)
-		nyx_str->cfg |= NYX_CFG_MINERVA;
 
-	nyx_str->version = ipl_ver.version - 0x303030;
+	nyx_str->version = ipl_ver.version - 0x303030; // Convert ASCII to numbers.
 
 	//memcpy((u8 *)nyx_str->irama, (void *)IRAM_BASE, 0x8000);
 	volatile reloc_meta_t *reloc = (reloc_meta_t *)(IPL_LOAD_ADDR + RELOC_META_OFF);
@@ -726,7 +760,7 @@ void nyx_load_run()
 	(*nyx_ptr)();
 }
 
-static ini_sec_t *get_ini_sec_from_id(ini_sec_t *ini_sec, char *bootlogoCustomEntry)
+static ini_sec_t *get_ini_sec_from_id(ini_sec_t *ini_sec, char **bootlogoCustomEntry)
 {
 	ini_sec_t *cfg_sec = NULL;
 
@@ -740,20 +774,20 @@ static ini_sec_t *get_ini_sec_from_id(ini_sec_t *ini_sec, char *bootlogoCustomEn
 				break;
 		}
 		if (!strcmp("logopath", kv->key))
-			bootlogoCustomEntry = kv->val;
+			*bootlogoCustomEntry = kv->val;
 		if (!strcmp("emummc_force_disable", kv->key))
 			h_cfg.emummc_force_disable = atoi(kv->val);
 	}
 	if (!cfg_sec)
 	{
-		bootlogoCustomEntry = NULL;
+		*bootlogoCustomEntry = NULL;
 		h_cfg.emummc_force_disable = false;
 	}
 
 	return cfg_sec;
 }
 
-void auto_launch_firmware()
+static void _auto_launch_firmware()
 {
 	if(b_cfg.extra_cfg & EXTRA_CFG_NYX_DUMP)
 	{
@@ -828,6 +862,8 @@ void auto_launch_firmware()
 								h_cfg.autohosoff = atoi(kv->val);
 							else if (!strcmp("autonogc", kv->key))
 								h_cfg.autonogc = atoi(kv->val);
+							else if (!strcmp("updater2p", kv->key))
+								h_cfg.updater2p = atoi(kv->val);
 							else if (!strcmp("brand", kv->key))
 							{
 								h_cfg.brand = malloc(strlen(kv->val) + 1);
@@ -857,7 +893,7 @@ void auto_launch_firmware()
 					}
 
 					if (boot_from_id)
-						cfg_sec = get_ini_sec_from_id(ini_sec, bootlogoCustomEntry);				
+						cfg_sec = get_ini_sec_from_id(ini_sec, &bootlogoCustomEntry);				
 					else if (h_cfg.autoboot == boot_entry_id && configEntry)
 					{
 						cfg_sec = ini_sec;
@@ -897,7 +933,7 @@ void auto_launch_firmware()
 								continue;
 
 							if (boot_from_id)
-								cfg_sec = get_ini_sec_from_id(ini_sec_list, bootlogoCustomEntry);
+								cfg_sec = get_ini_sec_from_id(ini_sec_list, &bootlogoCustomEntry);
 							else if (h_cfg.autoboot == boot_entry_id)
 							{
 								h_cfg.emummc_force_disable = false;
@@ -1004,7 +1040,7 @@ skip_list:
 	// Wait before booting. If VOL- is pressed go into bootloader menu.
 	if (!h_cfg.sept_run && !(b_cfg.boot_cfg & BOOT_CFG_FROM_LAUNCH))
 	{
-		btn = btn_wait_timeout(h_cfg.bootwait * 1000, BTN_VOL_DOWN);
+		btn = btn_wait_timeout(h_cfg.bootwait * 1000, BTN_VOL_DOWN | BTN_SINGLE);
 
 		if (btn & BTN_VOL_DOWN)
 			goto out;
@@ -1014,8 +1050,8 @@ skip_list:
 
 	if (payload_path)
 	{
-		if (launch_payload(payload_path, false))
-			free(payload_path);
+		launch_payload(payload_path, false);
+		free(payload_path);
 	}
 	else
 	{
@@ -1023,6 +1059,7 @@ skip_list:
 		hos_launch(cfg_sec);
 
 		EPRINTF("\nFailed to launch HOS!");
+		gfx_printf("\nPress any key...\n");
 		msleep(500);
 		btn_wait();
 	}
@@ -1041,7 +1078,7 @@ out:
 	sd_unmount();
 }
 
-void patched_rcm_protection()
+static void _patched_rcm_protection()
 {
 	sdmmc_storage_t storage;
 	sdmmc_t sdmmc;
@@ -1083,7 +1120,28 @@ void patched_rcm_protection()
 	sdmmc_storage_end(&storage);
 }
 
-void about()
+static void _show_errors()
+{
+	if (h_cfg.errors)
+	{
+		gfx_clear_grey(0x1B);
+		gfx_con_setpos(0, 0);
+		display_backlight_brightness(h_cfg.backlight, 1000);
+
+		if (h_cfg.errors & ERR_LIBSYS_LP0)
+			WPRINTF("Missing LP0 (sleep mode) library!\n");
+		if (h_cfg.errors & ERR_SYSOLD_MTC)
+			WPRINTF("Missing or old Minerva library!\n");
+
+		WPRINTF("\nUpdate your bootloader folder!\n\n");
+		WPRINTF("Press any key...");
+
+		msleep(2000);
+		btn_wait();
+	}
+}
+
+static void _about()
 {
 	static const char credits[] =
 		"\nhekate     (c) 2018 naehrwert, st4rk\n\n"
@@ -1100,8 +1158,8 @@ void about()
 		"   Copyright (c) 2018, ChaN\n\n"
 		" - bcl-1.2.0,\n"
 		"   Copyright (c) 2003-2006, Marcus Geelnard\n\n"
-		" - Atmosphere (SE sha256, prc id patches),\n"
-		"   Copyright (c) 2018, Atmosphere-NX\n\n"
+		" - Atmosphere (Exo st/types, prc id patches),\n"
+		"   Copyright (c) 2018-2019, Atmosphere-NX\n\n"
 		" - elfload,\n"
 		"   Copyright (c) 2014, Owen Shepherd\n"
 		"   Copyright (c) 2018, M4xw\n"
@@ -1231,15 +1289,11 @@ ment_t ment_top[] = {
 	MDEF_HANDLER("Reboot (RCM)", reboot_rcm),
 	MDEF_HANDLER("Power off", power_off),
 	MDEF_CAPTION("---------------", 0xFF444444),
-	MDEF_HANDLER("About", about),
+	MDEF_HANDLER("About", _about),
 	MDEF_END()
 };
 
-menu_t menu_top = { ment_top, "hekate - CTCaer mod v5.0.2", 0, 0 };
-
-#define IPL_STACK_TOP  0x90010000
-#define IPL_HEAP_START 0x90020000
-#define IPL_HEAP_END   0xB5000000
+menu_t menu_top = { ment_top, "hekate - CTCaer mod v5.1.1", 0, 0 };
 
 extern void pivot_stack(u32 stack_top);
 
@@ -1269,8 +1323,8 @@ void ipl_main()
 		h_cfg.errors |= ERR_LIBSYS_LP0;
 
 	// Train DRAM and switch to max frequency.
-	minerva_init();
-	minerva_change_freq(FREQ_1600);
+	if (minerva_init())
+		h_cfg.errors |= ERR_SYSOLD_MTC;
 
 	display_init();
 
@@ -1288,19 +1342,22 @@ void ipl_main()
 	//display_backlight_brightness(h_cfg.backlight, 1000);
 
 	// Overclock BPMP.
-	bpmp_clk_rate_set(BPMP_CLK_SUPER_BOOST);
+	bpmp_clk_rate_set(BPMP_CLK_DEFAULT_BOOST);
 
 	// Check if we had a panic while in CFW.
 	secmon_exo_check_panic();
 
 	// Check if RCM is patched and protect from a possible brick.
-	patched_rcm_protection();
+	_patched_rcm_protection();
 
 	// Load emuMMC configuration from SD.
 	emummc_load_cfg();
 
+	// Show library errors.
+	_show_errors();
+
 	// Load saved configuration and auto boot if enabled.
-	auto_launch_firmware();
+	_auto_launch_firmware();
 
 	minerva_change_freq(FREQ_800);
 

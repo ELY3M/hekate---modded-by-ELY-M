@@ -40,6 +40,7 @@
 #include "../soc/hw_init.h"
 #include "../soc/t210.h"
 #include "../storage/sdmmc.h"
+#include "../thermal/fan.h"
 #include "../thermal/tmp451.h"
 #include "../utils/dirlist.h"
 #include "../utils/sprintf.h"
@@ -87,7 +88,7 @@ static void _save_fb_to_bmp()
 	const u32 file_size = 0x384000 + 0x36;
 	u8 *bitmap = malloc(file_size);
 	u32 *fb = malloc(0x384000);
-	u32 *fb_ptr = gfx_ctxt.fb;
+	u32 *fb_ptr = (u32 *)NYX_FB_ADDRESS;
 
 	// Reconstruct FB for bottom-top, landscape bmp.
 	for (u32 x = 0; x < 1280; x++)
@@ -163,7 +164,7 @@ static void _save_fb_to_bmp()
 static void _disp_fb_flush(int32_t x1, int32_t y1, int32_t x2, int32_t y2, const lv_color_t *color_p)
 {
 	// Draw to framebuffer.
-	gfx_set_rect_land_pitch(gfx_ctxt.fb, (u32 *)color_p, x1, y1, x2, y2); //pitch
+	gfx_set_rect_land_pitch((u32 *)NYX_FB_ADDRESS, (u32 *)color_p, x1, y1, x2, y2); //pitch
 
 	// Check if display init was done. If it's the first big draw, init.
 	if (!disp_init_done && ((x2 - x1 + 1) > 600))
@@ -177,7 +178,7 @@ static void _disp_fb_flush(int32_t x1, int32_t y1, int32_t x2, int32_t y2, const
 
 static touch_event touchpad;
 
-static bool _fts_touch_read(lv_indev_data_t *data) 
+static bool _fts_touch_read(lv_indev_data_t *data)
 {
 	touch_poll(&touchpad);
 
@@ -326,9 +327,6 @@ lv_img_dsc_t *bmp_to_lvimg_obj(const char *path)
 
 	return (lv_img_dsc_t *)bitmap;
 }
-
-#pragma GCC push_options
-#pragma GCC target ("thumb")
 
 lv_res_t nyx_generic_onoff_toggle(lv_obj_t *btn)
 {
@@ -714,8 +712,8 @@ static void _create_tab_about(lv_theme_t * th, lv_obj_t * parent)
 		"   Copyright (c) 2018, ChaN\n\n"
 		" - bcl-1.2.0,\n"
 		"   Copyright (c) 2003-2006, Marcus Geelnard\n\n"
-		" - Atmosphere (SE sha256, process id patches),\n"
-		"   Copyright (c) 2018, Atmosphere-NX\n\n"
+		" - Atmosphere (Exosphere types/panic, proc id patches),\n"
+		"   Copyright (c) 2018-2019, Atmosphere-NX\n\n"
 		" - elfload,\n"
 		"   Copyright (c) 2014, Owen Shepherd\n"
 		"   Copyright (c) 2018, M4xw\n\n"
@@ -723,9 +721,8 @@ static void _create_tab_about(lv_theme_t * th, lv_obj_t * parent)
 		"   Copyright (c) 2016 Gabor Kiss-Vamosi"
 	);
 
-
 	lv_obj_t * lbl_octopus = lv_label_create(parent, NULL);
-	lv_obj_align(lbl_octopus, lbl_credits, LV_ALIGN_OUT_RIGHT_TOP, LV_DPI, 0);
+	lv_obj_align(lbl_octopus, lbl_credits, LV_ALIGN_OUT_RIGHT_TOP, -LV_DPI / 10, 0);
 	lv_ta_set_style(lbl_octopus, LV_TA_STYLE_BG, &monospace_text);
 	lv_label_set_recolor(lbl_octopus, true);
 
@@ -759,14 +756,12 @@ static void _create_tab_about(lv_theme_t * th, lv_obj_t * parent)
 	lv_obj_align(ctcaer_img, lbl_octopus, LV_ALIGN_OUT_BOTTOM_RIGHT, 0, LV_DPI * 2 / 3);
 
 	char version[32];
-	s_printf(version, "Nyx v%d.%d.%d", BL_VER_MJ, BL_VER_MN, BL_VER_HF);
+	s_printf(version, "Nyx v%d.%d.%d", NYX_VER_MJ, NYX_VER_MN, NYX_VER_HF);
 	lv_obj_t * lbl_ver = lv_label_create(parent, NULL);
 	lv_obj_align(lbl_ver, ctcaer_img, LV_ALIGN_OUT_BOTTOM_RIGHT, -LV_DPI / 20, LV_DPI / 4);
 	lv_ta_set_style(lbl_ver, LV_TA_STYLE_BG, &monospace_text);
 	lv_label_set_text(lbl_ver, version);
 }
-
-#pragma GCC pop_options
 
 static void _update_status_bar(void *params)
 {
@@ -787,10 +782,19 @@ static void _update_status_bar(void *params)
 	max17050_get_property(MAX17050_VCELL, &batt_volt);
 	max17050_get_property(MAX17050_Current, &batt_curr);
 
+	u32 soc_temp_dec = (soc_temp >> 8);
+	// Enable fan if more than 44 oC.
+	if (soc_temp_dec > 50)
+		set_fan_duty(100);
+	else if (soc_temp_dec > 44)
+		set_fan_duty(53);
+	else
+		set_fan_duty(0);
+
 	//! TODO: Parse time and use offset.
 	// Set time and SoC temperature.
 	s_printf(label, "%02d:%02d "SYMBOL_DOT" "SYMBOL_TEMPERATURE" %02d.%d",
-		time.hour, time.min, soc_temp >> 8, (soc_temp & 0xFF) / 10);
+		time.hour, time.min, soc_temp_dec, (soc_temp & 0xFF) / 10);
 
 	lv_label_set_array_text(status_bar.time_temp, label, 64);
 
@@ -824,7 +828,9 @@ static void _update_status_bar(void *params)
 	else
 		s_printf(label, "#FF3C28 -%d", (~batt_curr + 1) / 1000);
 
-	s_printf(label + strlen(label), " mA# (%d mV)", batt_volt);
+	bool voltage_empty = batt_volt < 3200;
+	s_printf(label + strlen(label), " mA# (%s%d mV%s)",
+		voltage_empty ? "FFF8000" : "", batt_volt,  voltage_empty ? "#" : "");
 
 	lv_label_set_array_text(status_bar.battery_more, label, 64);
 	lv_obj_realign(status_bar.battery_more);
@@ -1216,9 +1222,6 @@ static lv_res_t _create_window_home_launch(lv_obj_t *btn)
 	return LV_RES_OK;
 }
 
-#pragma GCC push_options
-#pragma GCC target ("thumb")
-
 static void _create_tab_home(lv_theme_t *th, lv_obj_t *parent)
 {
 	lv_page_set_scrl_layout(parent, LV_LAYOUT_OFF);
@@ -1572,7 +1575,7 @@ static void _nyx_main_menu(lv_theme_t * th)
 	static lv_style_t line_style;
 	lv_style_copy(&line_style, &lv_style_plain_color);
 
-	line_style.body.main_color = LV_COLOR_HEX3(0xDDD); // 0x505050
+	line_style.body.main_color = LV_COLOR_HEX(0xDDDDDD); // 0x505050
 	line_style.body.grad_color = line_style.body.main_color;
 	line_style.body.shadow.width = 0;
 
@@ -1597,8 +1600,6 @@ static void _nyx_main_menu(lv_theme_t * th)
 		lv_task_once(task_run_dump);
 	}
 }
-
-#pragma GCC pop_options
 
 void nyx_load_and_run()
 {

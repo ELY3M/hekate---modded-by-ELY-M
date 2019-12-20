@@ -23,9 +23,6 @@
 #include "../power/max77620.h"
 #include "../power/max7762x.h"
 
-#pragma GCC push_options
-#pragma GCC target ("thumb")
-
 void _cluster_enable_power()
 {
 	u8 tmp = i2c_recv_byte(I2C_5, MAX77620_I2C_ADDR, MAX77620_REG_AME_GPIO); // Get current pinmuxing
@@ -83,9 +80,9 @@ void cluster_boot_cpu0(u32 entry)
 
 	_cluster_enable_power();
 
-	if (!(CLOCK(CLK_RST_CONTROLLER_PLLX_BASE) & 0x40000000))
+	if (!(CLOCK(CLK_RST_CONTROLLER_PLLX_BASE) & 0x40000000)) // PLLX_ENABLE.
 	{
-		CLOCK(CLK_RST_CONTROLLER_PLLX_MISC_3) &= 0xFFFFFFF7;
+		CLOCK(CLK_RST_CONTROLLER_PLLX_MISC_3) &= 0xFFFFFFF7; // Disable IDDQ.
 		usleep(2);
 		CLOCK(CLK_RST_CONTROLLER_PLLX_BASE) = 0x80404E02;
 		CLOCK(CLK_RST_CONTROLLER_PLLX_BASE) = 0x404E02;
@@ -130,6 +127,9 @@ void cluster_boot_cpu0(u32 entry)
 	SB(SB_CSR) = SB_CSR_NS_RST_VEC_WR_DIS;
 	(void)SB(SB_CSR);
 
+	// Tighten up the security aperture.
+	// MC(MC_TZ_SECURITY_CTRL) = 1;
+
 	// Clear MSELECT reset.
 	CLOCK(CLK_RST_CONTROLLER_RST_DEVICES_V) &= 0xFFFFFFF7;
 	// Clear NONCPU reset.
@@ -138,5 +138,3 @@ void cluster_boot_cpu0(u32 entry)
 	// < 5.x: 0x411F000F, Clear CPU{0,1,2,3} POR and CORE, CX0, L2, and DBG reset.
 	CLOCK(CLK_RST_CONTROLLER_RST_CPUG_CMPLX_CLR) = 0x41010001;
 }
-
-#pragma GCC pop_options
