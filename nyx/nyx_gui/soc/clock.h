@@ -35,7 +35,9 @@
 #define CLK_RST_CONTROLLER_MISC_CLK_ENB 0x48
 #define CLK_RST_CONTROLLER_OSC_CTRL 0x50
 #define CLK_RST_CONTROLLER_PLLC_BASE 0x80
+#define CLK_RST_CONTROLLER_PLLC_OUT 0x84
 #define CLK_RST_CONTROLLER_PLLC_MISC 0x88
+#define CLK_RST_CONTROLLER_PLLC_MISC_1 0x8C
 #define CLK_RST_CONTROLLER_PLLM_BASE 0x90
 #define CLK_RST_CONTROLLER_PLLM_MISC1 0x98
 #define CLK_RST_CONTROLLER_PLLM_MISC2 0x9C
@@ -119,6 +121,7 @@
 #define CLK_RST_CONTROLLER_SPARE_REG0 0x55C
 #define CLK_RST_CONTROLLER_PLLC4_BASE 0x5A4
 #define CLK_RST_CONTROLLER_PLLC4_MISC 0x5A8
+#define CLK_RST_CONTROLLER_PLLC_MISC_2 0x5D0
 #define CLK_RST_CONTROLLER_PLLC4_OUT 0x5E4
 #define CLK_RST_CONTROLLER_PLLMB_BASE 0x5E8
 #define CLK_RST_CONTROLLER_CLK_SOURCE_DSIA_LP 0x620
@@ -133,10 +136,16 @@
 #define CLK_NO_SOURCE 0x0
 
 /*! PLL control and status bits */
-#define PLL_BASE_ENABLE      (1 << 30)
+#define PLLCX_BASE_ENABLE    (1 << 30)
+#define PLLCX_BASE_REF_DIS   (1 << 29)
+#define PLLCX_BASE_LOCK      (1 << 27)
+
+#define PLLC_MISC_RESET      (1 << 30)
+#define PLLC_MISC1_IDDQ      (1 << 27)
+#define PLLC_OUT1_CLKEN      (1 << 1)
+#define PLLC_OUT1_RSTN_CLR   (1 << 0)
 
 #define PLLC4_MISC_EN_LCKDET (1 << 30)
-#define PLLC4_BASE_LOCK      (1 << 27)
 #define PLLC4_BASE_IDDQ      (1 << 18)
 #define PLLC4_OUT3_CLKEN     (1 << 1)
 #define PLLC4_OUT3_RSTN_CLR  (1 << 0)
@@ -181,9 +190,11 @@ void clock_enable_coresight();
 void clock_disable_coresight();
 void clock_enable_pwm();
 void clock_disable_pwm();
+void clock_enable_pllc(u32 divn);
+void clock_disable_pllc();
 void clock_sdmmc_config_clock_source(u32 *pout, u32 id, u32 val);
 void clock_sdmmc_get_card_clock_div(u32 *pout, u16 *pdivisor, u32 type);
-int clock_sdmmc_is_not_reset_and_enabled(u32 id);
+int  clock_sdmmc_is_not_reset_and_enabled(u32 id);
 void clock_sdmmc_enable(u32 id, u32 val);
 void clock_sdmmc_disable(u32 id);
 

@@ -31,14 +31,21 @@ void uart_init(u32 idx, u32 baud)
 	// Misc settings.
 	u32 rate = (8 * baud + 408000000) / (16 * baud);
 	uart->UART_IER_DLAB = 0; // Disable interrupts.
-	uart->UART_MCR = 0; // Disable hardware flow control.
 	uart->UART_LCR = UART_LCR_DLAB | UART_LCR_WORD_LENGTH_8; // Enable DLAB & set 8n1 mode.
 	uart->UART_THR_DLAB = (u8)rate; // Divisor latch LSB.
 	uart->UART_IER_DLAB = (u8)(rate >> 8); // Divisor latch MSB.
 	uart->UART_LCR = UART_LCR_WORD_LENGTH_8; // Disable DLAB.
+	(void)uart->UART_SPR;
 
 	// Setup and flush fifo.
-	uart->UART_IIR_FCR = UART_IIR_FCR_EN_FIFO | UART_IIR_FCR_RX_CLR | UART_IIR_FCR_TX_CLR;
+	uart->UART_IIR_FCR = UART_IIR_FCR_EN_FIFO;
+	(void)uart->UART_SPR;
+	usleep(20);
+	uart->UART_MCR = 0; // Disable hardware flow control.
+	usleep(96);
+	uart->UART_IIR_FCR = UART_IIR_FCR_EN_FIFO | UART_IIR_FCR_TX_CLR | UART_IIR_FCR_RX_CLR;
+
+	// Wait 3 symbols for baudrate change.
 	usleep(3 * ((baud + 999999) / baud));
 	uart_wait_idle(idx, UART_TX_IDLE | UART_RX_IDLE);
 }
@@ -58,7 +65,7 @@ void uart_wait_idle(u32 idx, u32 which)
 	}
 }
 
-void uart_send(u32 idx, u8 *buf, u32 len)
+void uart_send(u32 idx, const u8 *buf, u32 len)
 {
 	uart_t *uart = (uart_t *)(UART_BASE + uart_baseoff[idx]);
 
@@ -70,14 +77,91 @@ void uart_send(u32 idx, u8 *buf, u32 len)
 	};
 }
 
-void uart_recv(u32 idx, u8 *buf, u32 len)
+u32 uart_recv(u32 idx, u8 *buf, u32 len)
+{
+	uart_t *uart = (uart_t *)(UART_BASE + uart_baseoff[idx]);
+	u32 timeout = get_tmr_us() + 1000;
+	u32 i;
+
+	for (i = 0; ; i++)
+	{
+		while (!(uart->UART_LSR & UART_LSR_RDR))
+		{
+			if (!len)
+			{
+				if (timeout < get_tmr_us())
+					break;
+			}
+			else if (len < i)
+				break;
+		}
+		if (timeout < get_tmr_us())
+			break;
+
+		buf[i] = uart->UART_THR_DLAB;
+		timeout = get_tmr_us() + 1000;
+	};
+
+	return i ? (len ? (i - 1) : i) : 0;
+}
+
+void uart_invert(u32 idx, bool enable, u32 invert_mask)
 {
 	uart_t *uart = (uart_t *)(UART_BASE + uart_baseoff[idx]);
 
-	for (u32 i = 0; i != len; i++)
+	if (enable)
+		uart->UART_IRDA_CSR |= invert_mask;
+	else
+		uart->UART_IRDA_CSR &= ~invert_mask;
+	(void)uart->UART_SPR;
+}
+
+u32 uart_get_IIR(u32 idx)
+{
+	uart_t *uart = (uart_t *)(UART_BASE + uart_baseoff[idx]);
+
+	return uart->UART_IIR_FCR;
+}
+
+void uart_set_IIR(u32 idx)
+{
+	uart_t *uart = (uart_t *)(UART_BASE + uart_baseoff[idx]);
+
+	uart->UART_IER_DLAB &= ~UART_IER_DLAB_IE_EORD;
+	(void)uart->UART_SPR;
+	uart->UART_IER_DLAB |= UART_IER_DLAB_IE_EORD;
+	(void)uart->UART_SPR;
+}
+
+void uart_empty_fifo(u32 idx, u32 which)
+{
+	uart_t *uart = (uart_t *)(UART_BASE + uart_baseoff[idx]);
+
+	uart->UART_MCR = 0;
+	(void)uart->UART_SPR;
+	usleep(96);
+
+	uart->UART_IIR_FCR = UART_IIR_FCR_EN_FIFO | UART_IIR_FCR_TX_CLR | UART_IIR_FCR_RX_CLR;
+	(void)uart->UART_SPR;
+	usleep(18);
+	u32 tries = 0;
+
+	if (UART_IIR_FCR_TX_CLR & which)
 	{
-		while (!(uart->UART_LSR & UART_LSR_RDR))
-			;
-		buf[i] = uart->UART_THR_DLAB;
-	};
+		while (tries < 10 && uart->UART_LSR & UART_LSR_TMTY)
+		{
+			tries++;
+			usleep(100);
+		}
+		tries = 0;
+	}
+
+	if (UART_IIR_FCR_RX_CLR & which)
+	{
+		while (tries < 10 && !uart->UART_LSR & UART_LSR_RDR)
+		{
+			tries++;
+			usleep(100);
+		}
+	}
 }
