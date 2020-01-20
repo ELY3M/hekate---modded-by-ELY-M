@@ -97,21 +97,21 @@ int parse_fss(launch_ctxt_t *ctxt, const char *path, fss0_sept_t *sept_ctxt)
 	bool stock = false;
 	int sept_used = 0;
 
-	LIST_FOREACH_ENTRY(ini_kv_t, kv, &ctxt->cfg->kvs, link)
+	if (!sept_ctxt)
 	{
-		if (!strcmp("stock", kv->key))
-			if (kv->val[0] == '1')
-				stock = true;
-	}
+		LIST_FOREACH_ENTRY(ini_kv_t, kv, &ctxt->cfg->kvs, link)
+		{
+			if (!strcmp("stock", kv->key))
+				if (kv->val[0] == '1')
+					stock = true;
+		}
 
-	if (!sept_ctxt && stock && ctxt->pkg1_id->kb <= KB_FIRMWARE_VERSION_620 && (!emu_cfg.enabled || h_cfg.emummc_force_disable))
-		return 1;
+		if (ctxt->pkg1_id->kb <= KB_FIRMWARE_VERSION_620 && (!emu_cfg.enabled || h_cfg.emummc_force_disable))
+			return 1;
+	}
 
 	if (f_open(&fp, path, FA_READ) != FR_OK)
 		return 0;
-
-	if (!sept_ctxt)
-		ctxt->atmosphere = true;
 
 	void *fss = malloc(f_size(&fp));
 	// Read header.
@@ -127,6 +127,12 @@ int parse_fss(launch_ctxt_t *ctxt, const char *path, fss0_sept_t *sept_ctxt)
 			"Unpacking and loading components..  ",
 			fss_meta->version >> 24, (fss_meta->version >> 16) & 0xFF, (fss_meta->version >> 8) & 0xFF, fss_meta->git_rev,
 			fss_meta->hos_ver >> 24, (fss_meta->hos_ver >> 16) & 0xFF, (fss_meta->hos_ver >> 8) & 0xFF);
+
+		if (!sept_ctxt)
+		{
+			ctxt->atmosphere = true;
+			ctxt->fss0_hosver = fss_meta->hos_ver;
+		}
 
 		fss_content_t *curr_fss_cnt = (fss_content_t *)(fss + fss_meta->cnt_off);
 		void *content;
@@ -167,15 +173,18 @@ int parse_fss(launch_ctxt_t *ctxt, const char *path, fss0_sept_t *sept_ctxt)
 				switch (curr_fss_cnt[i].type)
 				{
 				case CNT_TYPE_SP1:
-					memcpy(sept_ctxt->sept_primary, content, curr_fss_cnt[i].size);
-					break;
+					f_lseek(&fp, curr_fss_cnt[i].offset);
+					f_read(&fp, sept_ctxt->sept_primary, curr_fss_cnt[i].size, NULL);
+					continue;
 				case CNT_TYPE_SP2:
 					if (!memcmp(curr_fss_cnt[i].name, (sept_ctxt->kb < KB_FIRMWARE_VERSION_810) ? "septsecondary00" : "septsecondary01", 15))
 					{
-						memcpy(sept_ctxt->sept_secondary, content, curr_fss_cnt[i].size);
+						f_lseek(&fp, curr_fss_cnt[i].offset);
+						f_read(&fp, sept_ctxt->sept_secondary, curr_fss_cnt[i].size, NULL);
 						sept_used = 1;
+						goto out;
 					}
-					break;
+					continue;
 				default:
 					continue;
 				}
@@ -185,6 +194,7 @@ int parse_fss(launch_ctxt_t *ctxt, const char *path, fss0_sept_t *sept_ctxt)
 			f_read(&fp, content, curr_fss_cnt[i].size, NULL);
 		}
 
+out:
 		gfx_printf("Done!\n");
 		f_close(&fp);
 
