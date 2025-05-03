@@ -2,7 +2,7 @@
  * Minerva Training Cell
  * DRAM Training for Tegra X1 SoC. Supports DDR2/3 and LPDDR3/4.
  *
- * Copyright (c) 2018 CTCaer  <ctcaer@gmail.com>
+ * Copyright (c) 2018-2022 CTCaer  <ctcaer@gmail.com>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -44,16 +44,38 @@
 #define EMC_CH1(off) _REG(EMC1_BASE, off)
 /* End of addresses and access macros */
 
-#define EMC_TABLE_SIZE_R7         49280
 #define EMC_TABLE_ENTRY_SIZE_R7   4928
+#define EMC_TABLE_ENTRY_SIZE_R3   4300
+#define EMC_TABLE_SIZE_R7         (EMC_TABLE_ENTRY_SIZE_R7 * 7)
 #define EMC_STATUS_UPDATE_TIMEOUT 1000
 #define EMC_PERIODIC_TRAIN_MS     100
 #define EMC_TEMP_COMP_MS          1000
 
+/* Training types */
+#define NEEDS_TRAINING_CA              BIT(0)
+#define NEEDS_TRAINING_CA_VREF         BIT(1)
+#define NEEDS_TRAINING_QUSE            BIT(2)
+#define NEEDS_TRAINING_QUSE_VREF       BIT(3)
+#define NEEDS_TRAINING_WR              BIT(4)
+#define NEEDS_TRAINING_WR_VREF         BIT(5)
+#define NEEDS_TRAINING_RD              BIT(6)
+#define NEEDS_TRAINING_RD_VREF         BIT(7)
+#define NEEDS_TRAINING_SWAP_RANK       BIT(8)
+#define NEEDS_TRAINING_IN_SELF_REFRESH BIT(9)
+
+#define NEEDS_TRISTATE_TRAINING   (NEEDS_TRAINING_CA | NEEDS_TRAINING_CA_VREF | \
+								   NEEDS_TRAINING_QUSE | NEEDS_TRAINING_WR |    \
+								   NEEDS_TRAINING_WR_VREF | NEEDS_TRAINING_RD | \
+								   NEEDS_TRAINING_RD_VREF)
+#define NEEDS_TRAINING_CA_COMBO   (NEEDS_TRAINING_CA | NEEDS_TRAINING_CA_VREF)
+#define NEEDS_TRAINING_QUSE_COMBO (NEEDS_TRAINING_QUSE | NEEDS_TRAINING_QUSE_VREF)
+#define NEEDS_TRAINING_WR_COMBO   (NEEDS_TRAINING_WR | NEEDS_TRAINING_WR_VREF)
+#define NEEDS_TRAINING_RD_COMBO   (NEEDS_TRAINING_RD | NEEDS_TRAINING_RD_VREF)
+
 typedef struct
 {
-	s32 rate_to;
-	s32 rate_from;
+	u32 rate_to;
+	u32 rate_from;
 	emc_table_t *mtc_table;
 	u32 table_entries;
 	emc_table_t *current_emc_table;
@@ -63,7 +85,7 @@ typedef struct
 	bool emc_2X_clk_src_is_pllmb;
 	bool fsp_for_src_freq;
 	bool train_ram_patterns;
-	bool init_done;
+	u32  init_done;
 } mtc_config_t;
 
 enum train_mode_t
@@ -93,8 +115,8 @@ enum tree_update_mode_t
 
 enum emc_channels
 {
-	EMC_CH0 = 0,
-	EMC_CH1 = 1
+	EMC_CHANNEL0 = 0,
+	EMC_CHANNEL1 = 1
 };
 
 enum EMC_2X_CLK_SRC
@@ -138,8 +160,5 @@ void _minerva_do_over_temp_compensation(mtc_config_t *mtc_cfg);
 /* Periodic compensation only for tight timings that need it. Run every 100ms. */
 /* Over temp and periodic compensation, should not access EMC_MRR at the same time. */
 u32  _minerva_do_periodic_compensation(emc_table_t *mtc_table_entry);
-
-/* Main function used to access all Minerva functions. */
-void _minerva_init(mtc_config_t *mtc_cfg, void* bp);
 
 #endif

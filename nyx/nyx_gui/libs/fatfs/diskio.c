@@ -1,5 +1,7 @@
 /*-----------------------------------------------------------------------*/
-/* Low level disk I/O module skeleton for FatFs     (C)ChaN, 2016        */
+/* Low level disk I/O module skeleton for FatFs                          */
+/* (C) ChaN, 2016                                                        */
+/* (C) CTCaer, 2018-2020                                                 */
 /*-----------------------------------------------------------------------*/
 /* If a working storage control module is available, it should be        */
 /* attached to the FatFs via a glue function rather than modifying it.   */
@@ -8,11 +10,14 @@
 /*-----------------------------------------------------------------------*/
 
 #include <string.h>
-#include "diskio.h"		/* FatFs lower layer API */
-#include "../../../../common/memory_map.h"
-#include "../../storage/sdmmc.h"
 
-extern sdmmc_storage_t sd_storage;
+#include <bdk.h>
+
+#include <libs/fatfs/diskio.h>	/* FatFs lower layer API */
+
+static u32 sd_rsvd_sectors = 0;
+static u32 ramdisk_sectors = 0;
+static u32 emummc_sectors = 0;
 
 /*-----------------------------------------------------------------------*/
 /* Get Drive Status                                                      */
@@ -44,15 +49,19 @@ DRESULT disk_read (
 	UINT count		/* Number of sectors to read */
 )
 {
-	// Ensure that buffer resides in DRAM and it's DMA aligned.
-	if (((u32)buff >= DRAM_START) && !((u32)buff % 8))
-		return sdmmc_storage_read(&sd_storage, sector, count, buff) ? RES_OK : RES_ERROR;
-	u8 *buf = (u8 *)SDMMC_UPPER_BUFFER;
-	if (sdmmc_storage_read(&sd_storage, sector, count, buf))
+	switch (pdrv)
 	{
-		memcpy(buff, buf, 512 * count);
-		return RES_OK;
+	case DRIVE_SD:
+		return sdmmc_storage_read(&sd_storage, sector, count, (void *)buff) ? RES_OK : RES_ERROR;
+	case DRIVE_RAM:
+		return ram_disk_read(sector, count, (void *)buff);
+	case DRIVE_EMMC:
+		return sdmmc_storage_read(&emmc_storage, sector, count, (void *)buff) ? RES_OK : RES_ERROR;
+	case DRIVE_BIS:
+	case DRIVE_EMU:
+		return nx_emmc_bis_read(sector, count, (void *)buff) ? RES_OK : RES_ERROR;
 	}
+
 	return RES_ERROR;
 }
 
@@ -66,13 +75,19 @@ DRESULT disk_write (
 	UINT count			/* Number of sectors to write */
 )
 {
-	// Ensure that buffer resides in DRAM and it's DMA aligned.
-	if (((u32)buff >= DRAM_START) && !((u32)buff % 8))
+	switch (pdrv)
+	{
+	case DRIVE_SD:
 		return sdmmc_storage_write(&sd_storage, sector, count, (void *)buff) ? RES_OK : RES_ERROR;
-	u8 *buf = (u8 *)SDMMC_UPPER_BUFFER;
-	memcpy(buf, buff, 512 * count);
-	if (sdmmc_storage_write(&sd_storage, sector, count, buf))
-		return RES_OK;
+	case DRIVE_RAM:
+		return ram_disk_write(sector, count, (void *)buff);
+	case DRIVE_EMMC:
+	case DRIVE_BIS:
+		return RES_WRPRT;
+	case DRIVE_EMU:
+		return nx_emmc_bis_write(sector, count, (void *)buff) ? RES_OK : RES_ERROR;
+	}
+
 	return RES_ERROR;
 }
 
@@ -85,5 +100,83 @@ DRESULT disk_ioctl (
 	void *buff		/* Buffer to send/receive control data */
 )
 {
+	DWORD *buf = (DWORD *)buff;
+
+	if (pdrv == DRIVE_SD)
+	{
+		switch (cmd)
+		{
+		case GET_SECTOR_COUNT:
+			*buf = sd_storage.sec_cnt - sd_rsvd_sectors;
+			break;
+		case GET_BLOCK_SIZE:
+			*buf = 32768; // Align to 16MB.
+			break;
+		}
+	}
+	else if (pdrv == DRIVE_RAM)
+	{
+		switch (cmd)
+		{
+		case GET_SECTOR_COUNT:
+			*buf = ramdisk_sectors;
+			break;
+		case GET_BLOCK_SIZE:
+			*buf = 2048; // Align to 1MB.
+			break;
+		}
+	}
+	else if (pdrv == DRIVE_EMU)
+	{
+		switch (cmd)
+		{
+		case GET_SECTOR_COUNT:
+			*buf = emummc_sectors;
+			break;
+		case GET_BLOCK_SIZE:
+			*buf = 32768; // Align to 16MB.
+			break;
+		}
+	}
+	else // Catch all for unknown devices.
+	{
+		switch (cmd)
+		{
+		case CTRL_SYNC:
+			break;
+		case GET_SECTOR_COUNT:
+		case GET_BLOCK_SIZE:
+			*buf = 0; // Zero value to force default or abort.
+			break;
+		}
+	}
+
+	return RES_OK;
+}
+
+DRESULT disk_set_info (
+	BYTE pdrv,		/* Physical drive nmuber (0..) */
+	BYTE cmd,		/* Control code */
+	void *buff		/* Buffer to send/receive control data */
+)
+{
+	DWORD *buf = (DWORD *)buff;
+
+	if (cmd == SET_SECTOR_COUNT)
+	{
+		switch (pdrv)
+		{
+		case DRIVE_SD:
+			sd_rsvd_sectors = *buf;
+			break;
+		case DRIVE_RAM:
+			ramdisk_sectors = *buf;
+			break;
+		case DRIVE_EMU:
+			emummc_sectors = *buf;
+			break;
+		}
+	}
+
 	return RES_OK;
 }

@@ -1,7 +1,6 @@
 /*
  * Copyright (c) 2018 naehrwert
- * Copyright (c) 2018 CTCaer
- * Copyright (c) 2018 balika011
+ * Copyright (c) 2018-2022 CTCaer
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -20,13 +19,10 @@
 #define _FE_INFO_H_
 
 void print_fuseinfo();
-void print_kfuseinfo();
 void print_mmc_info();
 void print_sdcard_info();
-void print_tsec_key();
 void print_fuel_gauge_info();
 void print_battery_charger_info();
 void print_battery_info();
-void bootrom_ipatches_info();
 
 #endif

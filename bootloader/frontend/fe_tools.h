@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2018 naehrwert
- * Copyright (c) 2018 CTCaer
+ * Copyright (c) 2018-2024 CTCaer
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -18,10 +18,7 @@
 #ifndef _FE_TOOLS_H_
 #define _FE_TOOLS_H_
 
-void dump_packages12();
-void fix_sd_all_attr();
-void fix_sd_nin_attr();
-void fix_battery_desync();
 void menu_autorcm();
+bool tools_autorcm_enabled();
 
 #endif

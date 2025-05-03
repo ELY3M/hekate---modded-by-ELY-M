@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019 CTCaer
+ * Copyright (c) 2019-2022 CTCaer
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -17,37 +17,31 @@
 #include <string.h>
 #include <stdlib.h>
 
-#include "emummc.h"
-#include "sdmmc.h"
-#include "../config/config.h"
-#include "../config/ini.h"
-#include "../gfx/gfx.h"
-#include "../libs/fatfs/ff.h"
-#include "../mem/heap.h"
-#include "../utils/list.h"
-#include "../utils/types.h"
+#include <bdk.h>
 
-extern sdmmc_t sd_sdmmc;
-extern sdmmc_storage_t sd_storage;
-extern FATFS sd_fs;
+#include "emummc.h"
+#include "../config.h"
+#include <libs/fatfs/ff.h>
 
 extern hekate_config h_cfg;
-
-extern bool sd_mount();
-extern void sd_unmount();
+emummc_cfg_t emu_cfg = { 0 };
 
 void emummc_load_cfg()
 {
-	sd_mount();
 	emu_cfg.enabled = 0;
 	emu_cfg.path = NULL;
-	emu_cfg.nintendo_path = NULL;
 	emu_cfg.sector = 0;
 	emu_cfg.id = 0;
 	emu_cfg.file_based_part_size = 0;
 	emu_cfg.active_part = 0;
 	emu_cfg.fs_ver = 0;
-	emu_cfg.emummc_file_based_path = (char *)malloc(0x80);
+	if (!emu_cfg.nintendo_path)
+		emu_cfg.nintendo_path = (char *)malloc(0x200);
+	if (!emu_cfg.emummc_file_based_path)
+		emu_cfg.emummc_file_based_path = (char *)malloc(0x200);
+
+	emu_cfg.nintendo_path[0] = 0;
+	emu_cfg.emummc_file_based_path[0] = 0;
 
 	LIST_INIT(ini_sections);
 	if (ini_parse(&ini_sections, "emuMMC/emummc.ini", false))
@@ -61,21 +55,67 @@ void emummc_load_cfg()
 
 				LIST_FOREACH_ENTRY(ini_kv_t, kv, &ini_sec->kvs, link)
 				{
-					if (!strcmp("enabled", kv->key))
+					if (!strcmp("enabled",            kv->key))
 						emu_cfg.enabled = atoi(kv->val);
-					else if (!strcmp("sector", kv->key))
-						emu_cfg.sector = strtol(kv->val, NULL, 16);
-					else if (!strcmp("id", kv->key))
-						emu_cfg.id = strtol(kv->val, NULL, 16);
-					else if (!strcmp("path", kv->key))
-						emu_cfg.path = kv->val;
+					else if (!strcmp("sector",        kv->key))
+						emu_cfg.sector  = strtol(kv->val, NULL, 16);
+					else if (!strcmp("id",            kv->key))
+						emu_cfg.id      = strtol(kv->val, NULL, 16);
+					else if (!strcmp("path",          kv->key))
+						emu_cfg.path   = kv->val;
 					else if (!strcmp("nintendo_path", kv->key))
-						emu_cfg.nintendo_path = kv->val;
+						strcpy(emu_cfg.nintendo_path, kv->val);
 				}
 				break;
 			}
 		}
 	}
+}
+
+bool emummc_set_path(char *path)
+{
+	FIL fp;
+	bool found = false;
+
+	strcpy(emu_cfg.emummc_file_based_path, path);
+	strcat(emu_cfg.emummc_file_based_path, "/raw_based");
+
+	if (!f_open(&fp, emu_cfg.emummc_file_based_path, FA_READ))
+	{
+		if (!f_read(&fp, &emu_cfg.sector, 4, NULL))
+			if (emu_cfg.sector)
+				found = true;
+	}
+	else
+	{
+		strcpy(emu_cfg.emummc_file_based_path, path);
+		strcat(emu_cfg.emummc_file_based_path, "/file_based");
+
+		if (!f_stat(emu_cfg.emummc_file_based_path, NULL))
+		{
+			emu_cfg.sector = 0;
+			emu_cfg.path = path;
+
+			found = true;
+		}
+	}
+
+	if (found)
+	{
+		emu_cfg.enabled = 1;
+
+		// Get ID from path.
+		u32 id_from_path = 0;
+		u32 path_size = strlen(path);
+		if (path_size >= 4)
+			memcpy(&id_from_path, path + path_size - 4, 4);
+		emu_cfg.id = id_from_path;
+
+		strcpy(emu_cfg.nintendo_path, path);
+		strcat(emu_cfg.nintendo_path, "/Nintendo");
+	}
+
+	return found;
 }
 
 static int emummc_raw_get_part_off(int part_idx)
@@ -92,20 +132,22 @@ static int emummc_raw_get_part_off(int part_idx)
 	return 2;
 }
 
-int emummc_storage_init_mmc(sdmmc_storage_t *storage, sdmmc_t *sdmmc)
+int emummc_storage_init_mmc()
 {
 	FILINFO fno;
-	if (!sdmmc_storage_init_mmc(storage, sdmmc, SDMMC_4, SDMMC_BUS_WIDTH_8, 4))
+	emu_cfg.active_part = 0;
+
+	// Always init eMMC even when in emuMMC. eMMC is needed from the emuMMC driver anyway.
+	if (!emmc_initialize(false))
 		return 2;
 
-	if (h_cfg.emummc_force_disable)
+	if (!emu_cfg.enabled || h_cfg.emummc_force_disable)
 		return 0;
 
-	emu_cfg.active_part = 0;
 	if (!sd_mount())
 		goto out;
 
-	if (emu_cfg.enabled && !emu_cfg.sector)
+	if (!emu_cfg.sector)
 	{
 		strcpy(emu_cfg.emummc_file_based_path, emu_cfg.path);
 		strcat(emu_cfg.emummc_file_based_path, "/eMMC");
@@ -132,19 +174,21 @@ out:
 	return 1;
 }
 
-int emummc_storage_end(sdmmc_storage_t *storage)
+int emummc_storage_end()
 {
-	sd_unmount();
-	sdmmc_storage_end(storage);
+	if (!emu_cfg.enabled || h_cfg.emummc_force_disable)
+		emmc_end();
+	else
+		sd_end();
 
 	return 1;
 }
 
-int emummc_storage_read(sdmmc_storage_t *storage, u32 sector, u32 num_sectors, void *buf)
+int emummc_storage_read(u32 sector, u32 num_sectors, void *buf)
 {
 	FIL fp;
 	if (!emu_cfg.enabled || h_cfg.emummc_force_disable)
-		return sdmmc_storage_read(storage, sector, num_sectors, buf);
+		return sdmmc_storage_read(&emmc_storage, sector, num_sectors, buf);
 	else if (emu_cfg.sector)
 	{
 		sector += emu_cfg.sector;
@@ -185,11 +229,11 @@ int emummc_storage_read(sdmmc_storage_t *storage, u32 sector, u32 num_sectors, v
 	return 1;
 }
 
-int emummc_storage_write(sdmmc_storage_t *storage, u32 sector, u32 num_sectors, void *buf)
+int emummc_storage_write(u32 sector, u32 num_sectors, void *buf)
 {
 	FIL fp;
 	if (!emu_cfg.enabled || h_cfg.emummc_force_disable)
-		return sdmmc_storage_write(storage, sector, num_sectors, buf);
+		return sdmmc_storage_write(&emmc_storage, sector, num_sectors, buf);
 	else if (emu_cfg.sector)
 	{
 		sector += emu_cfg.sector;
@@ -210,15 +254,13 @@ int emummc_storage_write(sdmmc_storage_t *storage, u32 sector, u32 num_sectors, 
 				itoa(file_part, emu_cfg.emummc_file_based_path + strlen(emu_cfg.emummc_file_based_path) - 1, 10);
 			}
 		}
+
 		if (f_open(&fp, emu_cfg.emummc_file_based_path, FA_WRITE))
-		{
-			gfx_printf("e5\n");
 			return 0;
-		}
+
 		f_lseek(&fp, (u64)sector << 9);
 		if (f_write(&fp, buf, (u64)num_sectors << 9, NULL))
 		{
-			gfx_printf("e6\n");
 			f_close(&fp);
 			return 0;
 		}
@@ -228,13 +270,12 @@ int emummc_storage_write(sdmmc_storage_t *storage, u32 sector, u32 num_sectors, 
 	}
 }
 
-int emummc_storage_set_mmc_partition(sdmmc_storage_t *storage, u32 partition)
+int emummc_storage_set_mmc_partition(u32 partition)
 {
 	emu_cfg.active_part = partition;
+	emmc_set_partition(partition);
 
-	if (!emu_cfg.enabled || h_cfg.emummc_force_disable)
-		sdmmc_storage_set_mmc_partition(storage, partition);
-	else if (emu_cfg.sector)
+	if (!emu_cfg.enabled || h_cfg.emummc_force_disable || emu_cfg.sector)
 		return 1;
 	else
 	{

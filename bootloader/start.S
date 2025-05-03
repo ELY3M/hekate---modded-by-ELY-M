@@ -23,8 +23,8 @@
 .extern memset
 .type memset, %function
 
-.extern ipl_main
-.type ipl_main, %function
+.extern _irq_setup
+.type _irq_setup, %function
 
 .globl _start
 .type _start, %function
@@ -60,14 +60,15 @@ _reloc_ipl:
 	BX R3
 
 _real_start:
-	/* Initially, we place our stack in IRAM but will move it to SDRAM later. */
+	/* Initially, we place our stack under relocator but will move it to under the payload. */
+	/* This depends on application scope. */
 	LDR SP, =0x4003FF00
 	LDR R0, =__bss_start
 	EOR R1, R1, R1
 	LDR R2, =__bss_end
 	SUB R2, R2, R0
 	BL memset
-	BL ipl_main
+	BL _irq_setup
 	B .
 
 .globl pivot_stack

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2019 CTCaer
+ * Copyright (c) 2018-2021 CTCaer
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -17,10 +17,13 @@
 #ifndef _GUI_TOOLS_H_
 #define _GUI_TOOLS_H_
 
-#include "../libs/lvgl/lvgl.h"
+#include <libs/lvgl/lvgl.h>
+
+extern lv_obj_t *ums_mbox;
 
 void create_tab_tools(lv_theme_t *th, lv_obj_t *parent);
-void sept_run_dump();
-bool get_autorcm_status(bool change);
+void nyx_run_ums(void *param);
+bool get_set_autorcm_status(bool change);
+lv_res_t action_ums_sd(lv_obj_t *btn);
 
 #endif
